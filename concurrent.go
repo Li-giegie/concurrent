@@ -49,6 +49,30 @@ func DoContext[T any](ctx context.Context, numGo, numCh int, tasks []T, fn func(
 	}
 }
 
+// DoChanContext 泛型并发任务调度器，用于在 Go 中高效地并行处理一批任务
+// ctx：context、numGo：goroutine数量必须大于0、tasks：任务输入管道，处理完必须关闭管道、fn 工作携程调度的回调
+func DoChanContext[T any](ctx context.Context, numGo int, tasks chan T, fn func(ctx context.Context, task T)) error {
+	if numGo < 1 {
+		return fmt.Errorf("numGo must be greater than 0")
+	}
+	wg := new(sync.WaitGroup)
+	wg.Add(numGo)
+	for i := 0; i < numGo; i++ {
+		go do(context.WithValue(ctx, "goroutineId", i), wg, tasks, fn)
+	}
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-done:
+		return nil
+	}
+}
+
 func do[T any](ctx context.Context, wg *sync.WaitGroup, queue chan T, fn func(ctx context.Context, task T)) {
 	defer wg.Done()
 	for {
